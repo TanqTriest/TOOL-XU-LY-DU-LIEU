@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Tool Xử Lý Dữ Liệu Lớp Học (Pro)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f4f6f9; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { color: #333; text-align: center; }
+        textarea { width: 100%; height: 160px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; resize: vertical; }
+        
+        .toolbar { display: flex; gap: 15px; justify-content: center; align-items: center; margin: 15px 0; background: #e9ecef; padding: 12px 15px; border-radius: 8px; flex-wrap: wrap; }
+        .toolbar label { font-weight: bold; font-size: 13px; }
+        .toolbar select, .toolbar button { padding: 8px 16px; font-size: 14px; border-radius: 20px; border: none /*1px solid #ccc*/; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        
+        .btn-process { background: #28a745; color: white; border: none; font-weight: bold; }
+        .btn-process:hover { background: #218838; }
+        .btn-copy { background: #007bff; color: white; border: none; font-weight: bold; }
+        .btn-copy:hover { background: #0056b3; }
+
+        .table-container { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #343a40; color: white; position: sticky; top: 0; z-index: 1; }
+        .note { font-size: 12px; color: #666; margin-top: 5px; }
+
+        /* CSS hỗ trợ làm nổi bật vùng đang bôi đen trên bảng web giống Excel */
+        #resultTable td::selection, #resultTable th::selection {
+            background-color: #b3d7ff;
+            color: #000;
+        }
+        #resultTable {
+            user-select: text; /* Cho phép bôi đen chữ trong bảng */
+        }
+        
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Xử Lý Dữ Liệu Tự Động (Web ➔ Sheet)</h2>
+    
+    <label><b>1. Dán dữ liệu thô vào đây:</b></label>
+    <textarea id="rawInput" placeholder="Dán dữ liệu thô hàng ngày vào đây..."></textarea>
+    
+    <div class="toolbar">
+        <div>
+            <label>Ngày đánh giá:</label>
+            <input type="date" id="evalDate" style="padding: 5px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px;">
+        </div>
+        <button class="btn-process" onclick="processData()">🚀 Xử Lý & Tách Cột</button>
+
+        <button class="btn-copy" onclick="copyTableToClipboard()">📋 Copy Bảng</button>
+    </div>
+
+    <div class="note">Dữ liệu xử lý tạm thời trên RAM. Bạn có thể copy trực tiếp từ bảng dưới đây dán vào Google Sheets.</div>
+
+    <h3 style="margin-top: 20px;">2. Kết quả xử lý:</h3>
+    <div class="table-container">
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th>Cơ sở đánh giá</th>
+                    <th>Họ và tên GV</th>
+                    <th>Ngày đánh giá</th>
+                    <th>Bậc GV</th>
+                    <th>Thời gian bắt đầu</th>
+                    <th>Thời gian kết thúc</th>
+                    <th>Số ca</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Dữ liệu kết quả sẽ hiện ở đây -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+let processedDataList = [];
+
+function processData() {
+    const text = document.getElementById('rawInput').value;
+    //Lấy và định dạng ngày đánh giá từ ô input thành DD/MM/YYYY
+    let rawDate = document.getElementById('evalDate').value;
+    let formattedDate = "";
+    if (rawDate) {
+        let parts = rawDate.split('-'); // Tách [YYYY, MM, DD]
+        formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    if (!text.trim()) {
+        alert("Vui lòng dán dữ liệu thô trước!");
+        return;
+    }
+
+    const lines = text.split('\n');
+    let currentCoSo = "Chưa xác định";
+    let teacherMap = {}; 
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        if (!line) continue;
+
+        //if (line.includes("Chưa mở lớp")) continue;
+
+        let targetKeyword = "";
+        if (line.includes("Cơ sở")) {
+            targetKeyword = "Cơ sở";
+        } else if (line.includes("Lớp vẽ")) {
+            targetKeyword = "Lớp vẽ";
+        } else if (line.includes("Nhà Thiếu Nhi")) {
+            targetKeyword = "Nhà Thiếu Nhi";
+        }
+
+        if (targetKeyword !== "") {
+            let idx = line.lastIndexOf(targetKeyword);
+            let potentialCoSo = line.substring(idx).trim();
+            let cleanCoSo = potentialCoSo.split(/(?=Ca dạy|SL HV|Tình trạng|Đã mở|Chưa mở|\d{2}:\d{2})/)[0].trim();
+            if (cleanCoSo.length > 5) { 
+                currentCoSo = cleanCoSo;
+            }
+            continue;
+        }
+
+        if (line.includes("- Bậc")) {
+            let timeMatch = line.match(/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})/);
+            if (!timeMatch) continue;
+            let startTime = timeMatch[1];
+            let endTime = timeMatch[2];
+
+            let gvMatches = [...line.matchAll(/([^-]+?)\s*-\s*(Bậc\s*[\d,]+)\s*-\s*\d+/g)];
+            
+            gvMatches.forEach(match => {
+                let gvName = match[1].trim();
+                let words = gvName.split('\t');
+                gvName = words[words.length - 1].trim();
+                let bac = match[2].trim();
+
+                let key = `${currentCoSo}|${gvName}|${bac}`;
+                if (!teacherMap[key]) {
+                    teacherMap[key] = { coSo: currentCoSo, name: gvName, bac: bac, times: [] };
+                }
+                teacherMap[key].times.push({ start: startTime, end: endTime });
+            });
+        }
+    }
+
+    processedDataList = [];
+    let tbody = document.querySelector("#resultTable tbody");
+    tbody.innerHTML = "";
+
+    for (let key in teacherMap) {
+        let item = teacherMap[key];
+        item.times.sort((a, b) => a.start.localeCompare(b.start));
+        let earliestStart = item.times[0].start;
+        let latestEnd = item.times[item.times.length - 1].end;
+        let totalCa = item.times.length;
+
+        processedDataList.push({
+            coSo: item.coSo,
+            name: item.name,
+            date: formattedDate,
+            bac: item.bac,
+            start: earliestStart,
+            end: latestEnd,
+            count: totalCa
+        });
+
+        let row = `<tr>
+            <td>${item.coSo}</td>
+            <td>${item.name}</td>
+            <td>${formattedDate}</td>
+            <td>${item.bac}</td>
+            <td>${earliestStart}</td>
+            <td>${latestEnd}</td>
+            <td>${totalCa}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+    }
+}
+
+function copyTableToClipboard() {
+    if (processedDataList.length === 0) {
+        alert("Chưa có dữ liệu để copy! Vui lòng bấm 'Xử lý & Tách cột' trước.");
+        return;
+    }
+
+    // Tạo chuỗi dạng Tab-separated chuẩn Excel/Google Sheets
+    let textToCopy = "";
+    processedDataList.forEach(item => {
+        textToCopy += `${item.coSo}\t\t${item.name}\t${item.date}\t${item.bac}\t${item.start}\t${item.end}\t${item.count}\n`;
+    });
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        alert("✅ Đã copy thành công! Bạn hãy mở Google Sheets, chọn ô đầu tiên và bấm Ctrl + V (Dán thẳng vào là phân cột chuẩn xác).");
+    }).catch(err => {
+        alert("Lỗi khi copy: " + err);
+    });
+}
+
+// --- TÍNH NĂNG MỚI: BÔI ĐEN VÀ COPY LINH HOẠT VÙNG CHỌN GIỐNG EXCEL ---
+document.addEventListener('copy', function(e) {
+    let selection = window.getSelection();
+    if (!selection.isCollapsed) {
+        let container = document.createElement('div');
+        container.appendChild(selection.getRangeAt(0).cloneContents());
+        
+        // Nếu vùng bôi đen nằm bên trong bảng kết quả của chúng ta
+        let table = container.querySelector('table');
+        if (table || selection.anchorNode.parentElement.closest('#resultTable')) {
+            // Chuyển đổi dữ liệu vùng bôi đen thành định dạng Tab-separated chuẩn bảng tính
+            let rows = container.querySelectorAll('tr');
+            if (rows.length > 0) {
+                let clipboardData = "";
+                rows.forEach((row, rIdx) => {
+                    let cols = row.querySelectorAll('th, td');
+                    let rowData = [];
+                    cols.forEach(col => rowData.push(col.innerText.trim()));
+                    clipboardData += rowData.join('\t') + (rIdx < rows.length - 1 ? '\n' : '');
+                });
+                
+                e.clipboardData.setData('text/plain', clipboardData);
+                e.preventDefault(); // Ngăn trình duyệt copy kiểu HTML rác, thay bằng chuẩn bảng tính
+            }
+        }
+    }
+});
+
+</script>
+
+</body>
+</html>
