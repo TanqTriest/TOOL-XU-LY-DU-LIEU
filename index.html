@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -78,6 +79,7 @@
     <div class="note">Dữ liệu xử lý tạm thời trên RAM. Bạn có thể copy trực tiếp từ bảng dưới đây dán vào Google Sheets.</div>
 
     <h3 style="margin-top: 20px;">2. Kết quả xử lý:</h3>
+    <div id="processingStatus" class="note" aria-live="polite"></div>
     <div class="table-container">
         <table id="resultTable">
             <thead>
@@ -103,102 +105,89 @@ let processedDataList = [];
 
 function processData() {
     const text = document.getElementById('rawInput').value;
-    //Lấy và định dạng ngày đánh giá từ ô input thành DD/MM/YYYY
-    let rawDate = document.getElementById('evalDate').value;
-    let formattedDate = "";
-    if (rawDate) {
-        let parts = rawDate.split('-'); // Tách [YYYY, MM, DD]
-        formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-    if (!text.trim()) {
-        alert("Vui lòng dán dữ liệu thô trước!");
-        return;
-    }
+    const rawDate = document.getElementById('evalDate').value;
+    const formattedDate = rawDate ? rawDate.split('-').reverse().join('/') : '';
+    if (!text.trim()) { alert('Vui lòng dán dữ liệu thô trước!'); return; }
 
-    const lines = text.split('\n');
-    let currentCoSo = "Chưa xác định";
-    let teacherMap = {}; 
+    // Dùng khóa ghép để không gộp nhầm GV ở các cơ sở khác nhau.
+    const teacherMap = new Map();
+    const warnings = [];
+    let currentCoSo = '';
+    const decode = (s) => String(s || '')
+        .replace(/&#x20;|&#32;|&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&').replace(/<[^>]*>/g, '')
+        .replace(/\*\*/g, '').trim();
+    const isHeader = (cells) => cells.some(x => /^(?:[-:]\s*){3,}$/.test(x)) ||
+        cells.some(x => /^(?:Ca dạy|SL HV|Tình trạng|Giáo viên|Cơ sở đánh giá)$/i.test(x));
+    const timePattern = /(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/;
+    const teacherPattern = /(?:^|\s*-\s*)(Bậc\s*[\d,.]+)(?:\s*-\s*.*)?$/i;
+    const normTime = t => t.padStart(5, '0');
 
-    for (let i = 0; i < lines.length; i++) {
-        let line = lines[i].trim();
-        if (!line) continue;
-
-        //if (line.includes("Chưa mở lớp")) continue;
-
-        let targetKeyword = "";
-        if (line.includes("Cơ sở")) {
-            targetKeyword = "Cơ sở";
-        } else if (line.includes("Lớp vẽ")) {
-            targetKeyword = "Lớp vẽ";
-        } else if (line.includes("Nhà Thiếu Nhi")) {
-            targetKeyword = "Nhà Thiếu Nhi";
+    text.split(/\r?\n/).forEach((rawLine, index) => {
+        if (!rawLine.trim()) return;
+        const line = decode(rawLine);
+        let cells;
+        if (rawLine.includes('|')) {
+            cells = rawLine.split('|').map(decode);
+            if (!cells[0]) cells.shift();
+            if (!cells[cells.length - 1]) cells.pop();
+        } else {
+            cells = rawLine.split('\t').map(decode);
         }
+        if (isHeader(cells)) return;
+        // Xử lý cả ca đầu cùng dòng với tên cơ sở, tuyệt đối không continue.
+        const namedCell = cells.find(c => /^(?:Cơ sở\s+|Lớp vẽ\s+|Nhà Thiếu Nhi\s+)/i.test(c));
+        if (namedCell) currentCoSo = namedCell;
 
-        if (targetKeyword !== "") {
-            let idx = line.lastIndexOf(targetKeyword);
-            let potentialCoSo = line.substring(idx).trim();
-            let cleanCoSo = potentialCoSo.split(/(?=Ca dạy|SL HV|Tình trạng|Đã mở|Chưa mở|\d{2}:\d{2})/)[0].trim();
-            if (cleanCoSo.length > 5) { 
-                currentCoSo = cleanCoSo;
-            }
-            continue;
-        }
+        const timeIdx = cells.findIndex(c => timePattern.test(c));
+        if (timeIdx < 0) return;
+        const timeMatch = cells[timeIdx].match(timePattern);
+        const start = normTime(timeMatch[1]), end = normTime(timeMatch[2]);
+        // Trong bảng gốc, ngay sau cột giờ là số học viên.
+        const hvCell = cells[timeIdx + 1] || '';
+        const studentCount = /^\d+$/.test(hvCell) ? Number(hvCell) : null;
+        if (studentCount === 0) return;
+        if (studentCount === null) { warnings.push(`Dòng ${index + 1}: không xác định được số học viên`); return; }
+        if (!currentCoSo) { warnings.push(`Dòng ${index + 1}: không xác định được cơ sở`); return; }
 
-        if (line.includes("- Bậc")) {
-            let timeMatch = line.match(/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})/);
-            if (!timeMatch) continue;
-            let startTime = timeMatch[1];
-            let endTime = timeMatch[2];
-
-            let gvMatches = [...line.matchAll(/([^-]+?)\s*-\s*(Bậc\s*[\d,]+)\s*-\s*\d+/g)];
-            
-            gvMatches.forEach(match => {
-                let gvName = match[1].trim();
-                let words = gvName.split('\t');
-                gvName = words[words.length - 1].trim();
-                let bac = match[2].trim();
-
-                let key = `${currentCoSo}|${gvName}|${bac}`;
-                if (!teacherMap[key]) {
-                    teacherMap[key] = { coSo: currentCoSo, name: gvName, bac: bac, times: [] };
-                }
-                teacherMap[key].times.push({ start: startTime, end: endTime });
-            });
-        }
-    }
-
-    processedDataList = [];
-    let tbody = document.querySelector("#resultTable tbody");
-    tbody.innerHTML = "";
-
-    for (let key in teacherMap) {
-        let item = teacherMap[key];
-        item.times.sort((a, b) => a.start.localeCompare(b.start));
-        let earliestStart = item.times[0].start;
-        let latestEnd = item.times[item.times.length - 1].end;
-        let totalCa = item.times.length;
-
-        processedDataList.push({
-            coSo: item.coSo,
-            name: item.name,
-            date: formattedDate,
-            bac: item.bac,
-            start: earliestStart,
-            end: latestEnd,
-            count: totalCa
+        // Dữ liệu gốc: [Cơ sở] [Giờ] [SL HV] [SL lớp] [Trạng thái] [SL GV] [Đủ/Thiếu] [Các GV].
+        const teacherCells = cells.slice(timeIdx + 6).filter(Boolean);
+        const teacherSeen = new Set();
+        teacherCells.forEach(cell => {
+            if (!cell.includes(' - ')) return;
+            const pieces = cell.split(/\s+-\s+/);
+            const name = (pieces[0] || '').trim();
+            if (!name || !/[\p{L}]/u.test(name)) return;
+            const bac = (cell.match(/Bậc\s*[\d,.]+/i) || ['Chưa rõ bậc'])[0].trim();
+            const key = [currentCoSo, name, bac].join('|');
+            if (teacherSeen.has(key)) return;
+            teacherSeen.add(key);
+            if (!teacherMap.has(key)) teacherMap.set(key, { coSo: currentCoSo, name, bac, times: [] });
+            teacherMap.get(key).times.push({start, end, row: index + 1});
         });
+    });
 
-        let row = `<tr>
-            <td>${item.coSo}</td>
-            <td>${item.name}</td>
-            <td>${formattedDate}</td>
-            <td>${item.bac}</td>
-            <td>${earliestStart}</td>
-            <td>${latestEnd}</td>
-            <td>${totalCa}</td>
-        </tr>`;
-        tbody.innerHTML += row;
-    }
+    processedDataList = Array.from(teacherMap.values()).map(item => ({
+        coSo: item.coSo, name: item.name, date: formattedDate, bac: item.bac,
+        start: item.times.reduce((m, t) => t.start < m ? t.start : m, '99:99'),
+        end: item.times.reduce((m, t) => t.end > m ? t.end : m, '00:00'),
+        count: item.times.length
+    }));
+    const tbody = document.querySelector('#resultTable tbody');
+    tbody.replaceChildren();
+    processedDataList.forEach(item => {
+        const tr = document.createElement('tr');
+        [item.coSo, item.name, item.date, item.bac, item.start, item.end, item.count].forEach(value => {
+            const td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    const note = document.getElementById('processingStatus');
+    if (note) note.textContent = `${processedDataList.length} dòng giáo viên/cơ sở. ` +
+        (warnings.length ? `Cảnh báo: ${warnings.length} dòng chưa xử lý được (xem Console).` : 'Không có dòng nghi vấn.');
+    if (warnings.length) console.warn('Dòng chưa xử lý:', warnings);
 }
 
 function copyTableToClipboard() {
