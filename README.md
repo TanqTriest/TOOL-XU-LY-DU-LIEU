@@ -34,11 +34,11 @@ Cơ sở Quận 7
 ### 2. Kết quả sau khi xử lý (`Processed Table`)
 *Sau khi chọn ngày và bấm nút **"🚀 Xử Lý & Tách Cột"**, bảng kết quả sẽ tự động tổng hợp như sau:*
 
-| Cơ sở đánh giá| Họ và tên GV | Ngày đánh giá| Bậc GV| Bắt đầu| Kết thúc| Số ca|
-|               |              |              |       |        |         |      |
-| Cơ sở Quận 1  | Nguyễn Văn A | 28/10/2026   | Bậc 1 | 08:00  | 11:00   | 2    |
-| Cơ sở Quận 1  | Trần Thị B   | 28/10/2026   | Bậc 2 | 14:00  | 15:30   | 1    |
-| Cơ sở Quận 7  | Lê Văn C     | 28/10/2026   | Bậc 1 | 08:30  | 10:00   | 1    |
+| Cơ sở đánh giá | Họ và tên GV | Ngày đánh giá | Bậc GV | Bắt đầu | Kết thúc | Số ca |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Cơ sở Quận 1 | Nguyễn Văn A | 28/10/2026 | Bậc 1 | 08:00 | 11:00 | 2 |
+| Cơ sở Quận 1 | Trần Thị B | 28/10/2026 | Bậc 2 | 14:00 | 15:30 | 1 |
+| Cơ sở Quận 7 | Lê Văn C | 28/10/2026 | Bậc 1 | 08:30 | 10:00 | 1 |
 
 ---
 
