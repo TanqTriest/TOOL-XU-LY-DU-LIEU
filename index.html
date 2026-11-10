@@ -161,10 +161,8 @@ function processData() {
             let startTime = timeMatch[1];
             let endTime = timeMatch[2];
 
-            // Tách các ô theo tab: ô [1] = SL HV (cột C sheet Bố trí nhân sự), các ô còn lại có thể là GV
+            // Tách các ô theo tab, các ô có dạng "Tên - Bậc - SĐT" sẽ được nhận là giáo viên
             let cells = line.substring(timeMatch[0].length).split('\t');
-            let hvCell = (cells[1] || "").trim();
-            let slHV = /^\d+$/.test(hvCell) ? parseInt(hvCell, 10) : 0;
 
             // Mỗi ô GV có dạng: "Tên - Bậc xx - SĐT". Cho phép thiếu Bậc hoặc thiếu SĐT
             //   VD: "Bùi Ngọc Ánh Thi - Bậc 03 -"  (thiếu SĐT)
@@ -180,7 +178,7 @@ function processData() {
                 if (!teacherMap[key]) {
                     teacherMap[key] = { coSo: currentCoSo, name: gvName, bac: bac, times: [] };
                 }
-                teacherMap[key].times.push({ start: startTime, end: endTime, hv: slHV });
+                teacherMap[key].times.push({ start: startTime, end: endTime });
             });
         }
     }
@@ -195,12 +193,10 @@ function processData() {
         let earliestStart = item.times[0].start;
         let latestEnd = item.times[item.times.length - 1].end;
         let totalCa = item.times.length;
-        // Tổng SL HV của tất cả các ca mà GV này dạy
-        let totalHV = item.times.reduce((sum, t) => sum + t.hv, 0);
 
         processedDataList.push({
             coSo: item.coSo,
-            hv: totalHV,
+            hv: "",
             camera: "",
             name: item.name,
             date: formattedDate,
@@ -212,7 +208,7 @@ function processData() {
 
         let row = `<tr>
             <td>${item.coSo}</td>
-            <td>${totalHV}</td>
+            <td></td>
             <td></td>
             <td>${item.name}</td>
             <td>${formattedDate}</td>
@@ -232,7 +228,7 @@ function copyTableToClipboard() {
     }
 
     // Tạo chuỗi dạng Tab-separated chuẩn Excel/Google Sheets
-    // Thứ tự cột: Cơ sở | Số lượng HV | TÊN CAMERA (trống) | Họ tên GV | Ngày | Bậc | Bắt đầu | Kết thúc | Số ca
+    // Thứ tự cột: Cơ sở | Số lượng HV (trống) | TÊN CAMERA (trống) | Họ tên GV | Ngày | Bậc | Bắt đầu | Kết thúc | Số ca
     let textToCopy = "";
     processedDataList.forEach(item => {
         textToCopy += `${item.coSo}\t${item.hv}\t${item.camera}\t${item.name}\t${item.date}\t${item.bac}\t${item.start}\t${item.end}\t${item.count}\n`;
