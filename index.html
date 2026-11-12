@@ -57,6 +57,48 @@
     </style>
 </head>
 <body>
+<!--KHÓA MÀN HÌNH-->
+<script>document.addEventListener('DOMContentLoaded',function(){document.body.setAttribute('inert','');var d=document.createElement('div');d.style.cssText='position:fixed;inset:0;z-index:99999;background:#1f2430;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center';d.innerHTML='<div style="font-size:64px">🔒</div><h2 style="color:#fff">Tool đang bị khóa</h2><p>Hiện không thể truy cập.</p>';document.documentElement.appendChild(d);});</script>
+<!-- CHỐNG MỞ DEVTOOLS: xóa toàn bộ đoạn script bên dưới để tắt tính năng -->
+<script>
+(function () {
+  var fired = false;
+  function leave() {
+    if (fired) return;
+    fired = true;
+    document.documentElement.innerHTML = '';
+    window.close();                                  // đóng tab (chỉ hiệu lực với tab do script mở)
+    setTimeout(function () { location.replace('about:blank'); }, 100); // dự phòng: chuyển về trang trống
+  }
+  function detected() {
+    if (fired) return;
+    confirm('Phát hiện công cụ nhà phát triển (F12).\nBạn muốn truy cập để xem mã nguồn?\n\nNhấn OK để thoát.');
+    leave();
+  }
+  // 1) Chặn phím tắt mở DevTools / xem mã nguồn và chuột phải
+  document.addEventListener('keydown', function (e) {
+    var k = (e.key || '').toLowerCase();
+    if (e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].indexOf(k) > -1) ||
+        (e.metaKey && e.altKey && ['i', 'j', 'c'].indexOf(k) > -1) ||
+        ((e.ctrlKey || e.metaKey) && k === 'u')) {
+      e.preventDefault();
+      detected();
+    }
+  });
+  document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  // 2) Phát hiện DevTools đang mở: khung dock làm lệch kích thước cửa sổ
+  setInterval(function () {
+    if (window.outerWidth - window.innerWidth > 160 || window.outerHeight - window.innerHeight > 160) detected();
+  }, 800);
+  // 3) Phát hiện DevTools (kể cả tách rời): lệnh debugger làm trình duyệt đứng khi DevTools mở
+  setInterval(function () {
+    var t = performance.now();
+    (function () {}).constructor('debugger')();
+    if (performance.now() - t > 120) detected();
+  }, 1500);
+})();
+</script>
 
 <div class="container">
     <!-- Nút trỏ đến tool khác (Thay link bên dưới bằng URL Vercel của tool kia) -->
@@ -161,8 +203,10 @@ function processData() {
             let startTime = timeMatch[1];
             let endTime = timeMatch[2];
 
-            // Tách các ô theo tab, các ô có dạng "Tên - Bậc - SĐT" sẽ được nhận là giáo viên
+            // Tách các ô theo tab: ô [1] = SL HV (cột C sheet Bố trí nhân sự), các ô còn lại có thể là GV
             let cells = line.substring(timeMatch[0].length).split('\t');
+            let hvCell = (cells[1] || "").trim();
+            let slHV = /^\d+$/.test(hvCell) ? parseInt(hvCell, 10) : 0;
 
             // Mỗi ô GV có dạng: "Tên - Bậc xx - SĐT". Cho phép thiếu Bậc hoặc thiếu SĐT
             //   VD: "Bùi Ngọc Ánh Thi - Bậc 03 -"  (thiếu SĐT)
@@ -178,7 +222,7 @@ function processData() {
                 if (!teacherMap[key]) {
                     teacherMap[key] = { coSo: currentCoSo, name: gvName, bac: bac, times: [] };
                 }
-                teacherMap[key].times.push({ start: startTime, end: endTime });
+                teacherMap[key].times.push({ start: startTime, end: endTime, hv: slHV });
             });
         }
     }
@@ -193,10 +237,12 @@ function processData() {
         let earliestStart = item.times[0].start;
         let latestEnd = item.times[item.times.length - 1].end;
         let totalCa = item.times.length;
+        // Tổng SL HV của tất cả các ca mà GV này dạy
+        let totalHV = item.times.reduce((sum, t) => sum + t.hv, 0);
 
         processedDataList.push({
             coSo: item.coSo,
-            hv: "",
+            hv: totalHV,
             camera: "",
             name: item.name,
             date: formattedDate,
@@ -208,7 +254,7 @@ function processData() {
 
         let row = `<tr>
             <td>${item.coSo}</td>
-            <td></td>
+            <td>${totalHV}</td>
             <td></td>
             <td>${item.name}</td>
             <td>${formattedDate}</td>
@@ -228,7 +274,7 @@ function copyTableToClipboard() {
     }
 
     // Tạo chuỗi dạng Tab-separated chuẩn Excel/Google Sheets
-    // Thứ tự cột: Cơ sở | Số lượng HV (trống) | TÊN CAMERA (trống) | Họ tên GV | Ngày | Bậc | Bắt đầu | Kết thúc | Số ca
+    // Thứ tự cột: Cơ sở | Số lượng HV | TÊN CAMERA (trống) | Họ tên GV | Ngày | Bậc | Bắt đầu | Kết thúc | Số ca
     let textToCopy = "";
     processedDataList.forEach(item => {
         textToCopy += `${item.coSo}\t${item.hv}\t${item.camera}\t${item.name}\t${item.date}\t${item.bac}\t${item.start}\t${item.end}\t${item.count}\n`;
